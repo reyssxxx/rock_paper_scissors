@@ -30,7 +30,7 @@ def brawl(frame1):
             list=[] 
             results = hands.process(cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB))
             
-            #Incase the system sees multiple hands this if statment deals with that and produces another hand overlay
+            #Если система обнаруживает несколько рук, то оператор if обрабатывает это и создает еще одно наложение рук.
             if results.multi_hand_landmarks != None:
                 for handLandmarks in results.multi_hand_landmarks:
                     drawingModule.draw_landmarks(frame1, handLandmarks, handsModule.HAND_CONNECTIONS)
@@ -38,46 +38,46 @@ def brawl(frame1):
                     for id, pt in enumerate (handLandmarks.landmark):
                         x = int(pt.x * w)
                         y = int(pt.y * h)
-                        list.append([id,x,y])  #Gets landmarks position
+                        list.append([id,x,y])  #Получаем позиции разметки
                     
-            #print('list=', list)
+            
             a = list
             b= findnameoflandmark(frame1, hands)
 
                
-            if len(b and a)!=0:  #a[id,x,y]; x,y=[0,0] on top left of the screen; and x,y=[1,1] at the bottom right
+            if len(b and a)!=0:  #a[id,x,y]; x,y=[0,0] слева вверху экрана и x,y=[1,1] справа внизу
                 fingers=[]
                 for id in range(0,4):
-                    if tip[id]==8 and mid[id]==6:  #index_finger_tip landmark 
+                    if tip[id]==8 and mid[id]==6:  #Разметка указательного пальца  
                         if (a[tip[id]][2:] < a[mid[id]][2:]):
                             fingers.append(1)
                         else:
                             fingers.append(0)
-                    if tip[id]==12 and mid[id]==10: #middle_finger_tip landmark
+                    if tip[id]==12 and mid[id]==10: #Разметка среднего пальца
                         if (a[tip[id]][2:] < a[mid[id]][2:]):
                             fingers.append(1)
                         else:
                             fingers.append(0)
-                    if tip[id]==16 and mid[id]==14: #ring_finger_tip landmark
+                    if tip[id]==16 and mid[id]==14: #Разметка безымянного пальца
                         if (a[tip[id]][2:] < a[mid[id]][2:]):
                             fingers.append(1)
                         else:
                             fingers.append(0)
-                    if tip[id]==20 and mid[id]==18: #pinky_finger_tip landmark
+                    if tip[id]==20 and mid[id]==18: #Разметка мизинца
                         if (a[tip[id]][2:] < a[mid[id]][2:]):
                             fingers.append(1)
                         else:
                             fingers.append(0)
                                                                            
                 x=fingers                 
-                        #rock
-                if x[0] == 0 and x[1]==0 and x[2]==0 and x[3]==0:  #rock vs rock
+                        #Игрок выбрал камень
+                if x[0] == 0 and x[1]==0 and x[2]==0 and x[3]==0:  
                             return 'Камень'
-                        #scissors
-                if x[0] == 1 and x[1]==1 and x[2]==0 and x[3]==0:  #scissors vs rock
+                        #Ножницы
+                if x[0] == 1 and x[1]==1 and x[2]==0 and x[3]==0:  
                             return 'Ножницы'                   
-                        #paper
-                if x[0] == 1 and x[1]==1 and x[2]==1 and x[3]==1:  #paper vs rock
+                        #Бумагу
+                if x[0] == 1 and x[1]==1 and x[2]==1 and x[3]==1:  
                             return 'Бумага'
                 return None                        
                             
