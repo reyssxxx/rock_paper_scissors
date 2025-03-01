@@ -2,249 +2,380 @@ import flet as ft
 import cv2
 import base64
 import random
-from collections import defaultdict
 from ai import brawl
 from time import sleep
 import threading
 import os
 
-PATH = os.getcwd() 
-PATH.replace('\\', '/') 
+PATH = os.getcwd().replace('\\', '/')
 
-class RockPaperScissorsUI:
+class RockPaperScissorsGame:
     def __init__(self, page: ft.Page):
         self.page = page
-        self.setup_window()
-        self.init_game()
-        self.create_interface()
-        self.start_camera()
-
-    def setup_window(self):
-        self.page.title = "Rock Paper Scissors"
-        self.page.window_full_screen = True
-        self.page.window_resizable = False
-        self.page.padding = 0
+        self.page.title = "Камень-Ножницы-Бумага"
+        self.page.window_maximized = True
+        self.page.window_resizable = True
         self.page.theme_mode = ft.ThemeMode.DARK
-
-    def init_game(self):
+        self.page.on_view_pop = self.on_view_pop
+        self.page.on_route_change = self.route_change
         self.camera = cv2.VideoCapture(0)
         self.choices = ["Камень", "Ножницы", "Бумага"]
         self.game_status = "ready"
-        self.wins = 0
-        self.losses = 0
-        self.draws = 0
-        self.last_games = []
         self.is_camera_active = True
-        self.current_user = "Гость"
-        self.gesture_stats = defaultdict(int)
+        self.game_history = []
+        self.player_choices = []
+        
+        # Временное хранилище пользователей
+        self.temp_users = {
+            "admin": {"password": "admin", "stats": {"wins": 0, "losses": 0, "draws": 0}}
+        }
+        self.current_user = None
+        
+        self.create_main_ui()
+        self.create_profile_ui()
+        self.create_stats_ui()
+        
+        self.page.views.append(self.main_view)
+        self.page.update()
+        
+        self.camera_thread = threading.Thread(target=self.update_camera, daemon=True)
+        self.camera_thread.start()
 
-    def create_interface(self):
-        # Заголовок
-        header = ft.Row(
+    def route_change(self, route):
+        self.page.views.clear()
+        self.page.views.append(self.main_view)
+        
+        if self.page.route == "/stats":
+            self.page.views.append(self.stats_view)
+        
+        if self.page.route == "/profile":
+            self.page.views.append(self.profile_view)
+        
+        self.page.update()
+
+    def create_main_ui(self):
+        self.stats_button = ft.IconButton(
+            icon=ft.icons.INSERT_CHART_OUTLINED,
+            on_click=lambda _: self.page.go("/stats"),
+            disabled=True,
+            tooltip="Статистика"
+        )
+        
+        self.header = ft.Row(
             controls=[
-                ft.IconButton(icon=ft.icons.SUPPORT, tooltip="Поддержка"),
-                ft.Text("Камень-Ножницы-Бумага", size=24, weight=ft.FontWeight.BOLD),
-                ft.IconButton(icon=ft.icons.LEADERBOARD, tooltip="Лидерборд"),
+                ft.Text("Камень-Ножницы-Бумага", size=24, expand=True),
+                ft.Row([
+                    self.stats_button,
+                    ft.IconButton(icon=ft.icons.PERSON, on_click=self.show_profile)
+                ])
             ],
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN
         )
 
-        # Основные элементы
-        self.player_cam = ft.Image(width=400, height=300, border_radius=10)
-        self.ai_image = ft.Image(src=f"{PATH}/src/ai.png", width=400, height=300, border_radius=10)
-        
-        self.player_choice_display = ft.Text("Ожидание...", size=18)
-        self.ai_choice_display = ft.Text("Ожидание...", size=18)
-        
-        self.timer_display = ft.Text("", size=40)
-        self.result_display = ft.Text("", size=24)
-        
-        self.start_btn = ft.ElevatedButton(
-            "НАЧАТЬ БОЙ",
-            icon=ft.icons.PLAY_ARROW,
-            width=200,
-            height=50,
-            on_click=self.start_game
-        )
+        # Виджеты камеры
+        self.player_view = ft.Image(width=400, height=300, border_radius=10, fit=ft.ImageFit.CONTAIN)
+        self.ai_view = ft.Image(src=f"{PATH}/src/ai.png", width=400, height=300, border_radius=10)
 
-        # История игр
-        self.game_history = ft.Column(
-            [ft.Text(f"Игра {i+1}: -", size=14) for i in range(5)],
-            spacing=5
-        )
+        # Отображение выбора
+        self.player_choice = ft.Image(width=150, height=150, border_radius=10)
+        self.ai_choice = ft.Image(width=150, height=150, border_radius=10)
 
-        # Профиль
-        self.profile_btn = ft.Container(
-            content=ft.Row([
-                ft.Icon(ft.icons.PERSON),
-                ft.Text(self.current_user),
-                ft.IconButton(
-                    icon=ft.icons.SETTINGS,
-                    on_click=self.show_profile,
-                    tooltip="Профиль"
-                )
-            ], spacing=10),
-            padding=10,
-            right=20,
-            bottom=20,
-            bgcolor=ft.colors.BLUE_GREY_800,
-            border_radius=10
-        )
-
-        # Сборка интерфейса
-        main_layout = ft.Row(
+        # Центральная панель
+        self.timer_text = ft.Text("", size=72)
+        self.result_text = ft.Text("", size=24)
+        self.start_btn = ft.ElevatedButton("НАЧАТЬ БОЙ", on_click=self.start_game, height=100, width=300)
+        self.history = ft.Column([], spacing=10)
+        self.main_view = ft.View(
+            "/",
             [
-                ft.Column([
-                    ft.Text("Камера игрока:", size=18),
-                    self.player_cam,
-                    ft.Text("Ваш выбор:", size=18),
-                    self.player_choice_display
-                ], spacing=10),
-                
-                ft.Column([
-                    ft.Container(height=50),
-                    self.timer_display,
-                    self.result_display,
-                    self.start_btn,
-                    ft.Text("Последние игры:", size=18),
-                    self.game_history
-                ], spacing=20, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                
-                ft.Column([
-                    ft.Text("Компьютер:", size=18),
-                    self.ai_image,
-                    ft.Text("Выбор компьютера:", size=18),
-                    self.ai_choice_display
-                ], spacing=10)
+                self.header,
+                ft.ResponsiveRow(
+                    [
+                        ft.Column(
+                            [
+                                ft.Text("Ваша камера:", size=20),
+                                self.player_view,
+                                ft.Divider(height=10),
+                                ft.Text("Ваш выбор:", size=20),
+                                self.player_choice
+                            ],
+                            col={"md": 4},
+                            spacing=15
+                        ),
+                        ft.Column(
+                            [
+                                ft.Container(
+                                    content=ft.Column(
+                                        [
+                                            self.timer_text,
+                                            self.result_text,
+                                            self.start_btn,
+                                            ft.Divider(height=10),
+                                            ft.Text("Последние игры:", size=20),
+                                            self.history
+                                        ],
+                                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                                        spacing=15
+                                    ),
+                                    height=400
+                                )
+                            ],
+                            col={"md": 4},
+                            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        ft.Column(
+                            [
+                                ft.Text("Компьютер:", size=20),
+                                self.ai_view,
+                                ft.Divider(height=10),
+                                ft.Text("Выбор компьютера:", size=20),
+                                self.ai_choice
+                            ],
+                            col={"md": 4},
+                            spacing=15
+                        )
+                    ],
+                    expand=True,
+                    vertical_alignment=ft.CrossAxisAlignment.START,
+                    alignment=ft.MainAxisAlignment.SPACE_EVENLY
+                )
             ],
-            alignment=ft.MainAxisAlignment.SPACE_EVENLY,
-            vertical_alignment=ft.CrossAxisAlignment.START,
-            expand=True
+            padding=20,
+            spacing=20
         )
 
-        self.page.add(ft.Stack([ft.Column([header, main_layout]), self.profile_btn]))
-
-    def start_camera(self):
-        def update_frame():
-            while self.is_camera_active:
-                ret, frame = self.camera.read()
-                if ret:
-                    frame = cv2.flip(frame, 1)
-                    if self.game_status == "countdown":
-                        cv2.rectangle(frame, (20, 20), (frame.shape[1]-20, frame.shape[0]-20), (0, 255, 0), 3)
-                    _, buffer = cv2.imencode('.jpg', frame)
-                    self.player_cam.src_base64 = base64.b64encode(buffer).decode()
-                    self.page.update()
-                sleep(0.03)
+    def create_profile_ui(self):
+        self.username = ft.TextField(label="Логин", width=400, height=60)
+        self.password = ft.TextField(label="Пароль", password=True, width=400, height=60)
+        self.auth_message = ft.Text("", color=ft.colors.RED)
         
-        threading.Thread(target=update_frame, daemon=True).start()
+        self.profile_view = ft.View(
+            "/profile",
+            [
+                ft.AppBar(title=ft.Text("Профиль"), bgcolor=ft.colors.SURFACE_VARIANT),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Container(height=40),
+                            ft.Text("АВТОРИЗАЦИЯ", size=26, weight=ft.FontWeight.W_700),
+                            ft.Container(height=20),
+                            self.auth_message,
+                            self.username,
+                            self.password,
+                            ft.Container(height=30),
+                            ft.Row(
+                                [
+                                    ft.ElevatedButton(
+                                        "Войти",
+                                        on_click=self.login_user,
+                                        width=180,
+                                        height=45,
+                                        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)))
+                                ],
+                                spacing=40,
+                                alignment=ft.MainAxisAlignment.CENTER
+                            )
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.padding.all(40),
+                    alignment=ft.alignment.center,
+                    bgcolor=ft.colors.BACKGROUND,
+                    border_radius=20,
+                    width=700,
+                    height=500
+                )
+            ],
+            padding=0,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER
+        )
 
-    def start_game(self, e):
-        if self.game_status == "ready":
-            self.game_status = "countdown"
-            self.start_btn.disabled = True
-            self.reset_display()
-            self.countdown_animation()
-            
-            # Получение выбора игрока
-            ret, frame = self.camera.read()
-            player_choice = brawl(frame)
-            ai_choice = random.choice(self.choices)
-            
-            # Обновление интерфейса
-            self.update_choices(player_choice, ai_choice)
-            self.update_game_result(player_choice, ai_choice)
-            self.update_history()
-            self.reset_game_state()
-
-    def reset_display(self):
-        self.player_choice_display.value = "Ожидание..."
-        self.ai_choice_display.value = "Ожидание..."
-        self.result_display.value = ""
-        self.page.update()
-
-    def countdown_animation(self):
-        for i in range(3, 0, -1):
-            self.timer_display.value = str(i)
-            self.page.update()
-            sleep(1)
-        self.timer_display.value = "Готово!"
-        self.page.update()
-        sleep(1)
-        self.timer_display.value = ""
-
-    def update_choices(self, player, ai):
-        self.player_choice_display.value = player if player in self.choices else "Ошибка"
-        self.ai_choice_display.value = ai
-        self.page.update()
-
-    def update_game_result(self, player, ai):
-        if player not in self.choices:
-            self.result_display.value = "Ошибка распознавания!"
-            self.result_display.color = ft.colors.RED
-            return
-            
-        self.gesture_stats[player] += 1
+    def create_stats_ui(self):
+        self.stats_header = ft.Text("СТАТИСТИКА", size=26, weight=ft.FontWeight.W_700)
+        self.total_games = ft.Text("Всего игр: 0")
+        self.stats_wins = ft.Text("Побед: 0")
+        self.stats_losses = ft.Text("Поражений: 0")
+        self.stats_draws = ft.Text("Ничьих: 0")
+        self.win_rate = ft.Text("WinRate: 0%")
+        self.frequent_choice = ft.Text("Частый выбор: ")
+        self.choice_image = ft.Image(width=100, height=100, border_radius=10)
+        self.session_stats = ft.Text("Игр в этой сессии: 0")
+        self.logout_btn = ft.ElevatedButton("Выйти", on_click=self.logout_user)
         
-        if player == ai:
-            result = "Ничья!"
-            color = ft.colors.YELLOW
-            self.draws += 1
-        elif (player == "Камень" and ai == "Ножницы") or \
-             (player == "Ножницы" and ai == "Бумага") or \
-             (player == "Бумага" and ai == "Камень"):
-            result = "Победа!"
-            color = ft.colors.GREEN
-            self.wins += 1
-        else:
-            result = "Поражение!"
-            color = ft.colors.RED
-            self.losses += 1
-        
-        self.result_display.value = result
-        self.result_display.color = color
-        self.page.update()
+        self.stats_view = ft.View(
+            "/stats",
+            [
+                ft.AppBar(title=ft.Text("Статистика"), bgcolor=ft.colors.SURFACE_VARIANT),
+                ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Container(height=20),
+                            self.stats_header,
+                            ft.Divider(),
+                            self.total_games,
+                            self.stats_wins,
+                            self.stats_losses,
+                            self.stats_draws,
+                            self.win_rate,
+                            ft.Divider(),
+                            ft.Row([self.frequent_choice, self.choice_image], 
+                                  alignment=ft.MainAxisAlignment.CENTER),
+                            ft.Divider(),
+                            self.session_stats,
+                            ft.Container(height=20),
+                            self.logout_btn
+                        ],
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    padding=ft.padding.all(40),
+                    alignment=ft.alignment.center,
+                    bgcolor=ft.colors.BACKGROUND,
+                    border_radius=20,
+                    width=700,
+                )
+            ],
+            padding=0,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER
+        )
 
     def update_history(self):
-        result = self.result_display.value
-        self.last_games = (self.last_games + [result])[-5:]
-        
-        for i, text in enumerate(self.game_history.controls):
-            if i < len(self.last_games):
-                text.value = f"{self.last_games[i]}"
-            else:
-                text.value = f" "
+        self.history.controls = []
+        for result in self.game_history[-5:]:
+            color = ft.colors.GREEN if result == "Победа" else ft.colors.RED if result == "Поражение" else ft.colors.YELLOW
+            self.history.controls.append(ft.Text(result, color=color))
+        while len(self.history.controls) < 5:
+            self.history.controls.append(ft.Text("-", color=ft.colors.GREY))
         self.page.update()
 
-    def reset_game_state(self):
+    def update_stats(self):
+        if self.current_user:
+            stats = self.temp_users[self.current_user]["stats"]
+            total = stats['wins'] + stats['losses'] + stats['draws']
+            win_rate = (stats['wins'] / total * 100) if total > 0 else 0
+            
+            if self.player_choices:
+                freq_choice = max(set(self.player_choices), key=self.player_choices.count)
+                self.choice_image.src = f"{PATH}/src/{freq_choice.lower()}.png"
+                self.frequent_choice.value = f"Частый выбор: {freq_choice}"
+            else:
+                self.choice_image.src = ""
+                self.frequent_choice.value = "Частый выбор: нет данных"
+            
+            self.total_games.value = f"Всего игр: {total}"
+            self.stats_wins.value = f"Побед: {stats['wins']}"
+            self.stats_losses.value = f"Поражений: {stats['losses']}"
+            self.stats_draws.value = f"Ничьих: {stats['draws']}"
+            self.win_rate.value = f"WinRate: {win_rate:.1f}%"
+            self.session_stats.value = f"Игр в этой сессии: {len(self.game_history)}"
+            self.page.update()
+
+    def start_game(self, e):
+        if self.game_status != "ready":
+            return
+            
+        self.game_status = "countdown"
+        self.start_btn.disabled = True
+        
+        for i in range(3, 0, -1):
+            self.timer_text.value = str(i)
+            self.page.update()
+            sleep(1)
+            
+        ret, frame = self.camera.read()
+        player_choice = brawl(frame)
+        ai_choice = random.choice(self.choices)
+        
+        if player_choice in self.choices:
+            self.player_choices.append(player_choice)
+        
+        self.player_choice.src = f"{PATH}/src/{player_choice.lower()}.png" if player_choice in self.choices else ""
+        self.ai_choice.src = f"{PATH}/src/{ai_choice.lower()}.png"
+        
+        result = "Ошибка"
+        if player_choice in self.choices:
+            if player_choice == ai_choice:
+                result = "Ничья"
+                if self.current_user:
+                    self.temp_users[self.current_user]["stats"]["draws"] += 1
+            elif (player_choice == "Камень" and ai_choice == "Ножницы") or \
+                 (player_choice == "Ножницы" and ai_choice == "Бумага") or \
+                 (player_choice == "Бумага" and ai_choice == "Камень"):
+                result = "Победа"
+                if self.current_user:
+                    self.temp_users[self.current_user]["stats"]["wins"] += 1
+            else:
+                result = "Поражение"
+                if self.current_user:
+                    self.temp_users[self.current_user]["stats"]["losses"] += 1
+        
+        self.game_history.append(result)
+        self.update_history()
+        self.update_stats()
+        
+        self.result_text.value = result
+        self.result_text.color = ft.colors.GREEN if result == "Победа" else \
+                                ft.colors.RED if result == "Поражение" else \
+                                ft.colors.YELLOW
+        self.timer_text.value = ""
         self.game_status = "ready"
         self.start_btn.disabled = False
         self.page.update()
 
     def show_profile(self, e):
-        # Реализация окна профиля
-        profile_dialog = ft.AlertDialog(
-            title=ft.Text("Профиль"),
-            content=ft.Column([
-                ft.Text(f"Игрок: {self.current_user}"),
-                ft.Text(f"Победы: {self.wins}"),
-                ft.Text(f"Поражения: {self.losses}"),
-                ft.Text(f"Ничьи: {self.draws}"),
-                ft.Text(f"Самый частый жест: {max(self.gesture_stats, key=self.gesture_stats.get, default='-')}")
-            ], spacing=10),
-            actions=[ft.TextButton("Закрыть", on_click=lambda e: self.close_dialog())]
-        )
-        self.page.dialog = profile_dialog
-        profile_dialog.open = True
+        if self.current_user:
+            self.page.go("/stats")
+        else:
+            self.page.go("/profile")
+
+    def login_user(self, e):
+        username = self.username.value
+        password = self.password.value
+        
+        if username in self.temp_users and self.temp_users[username]["password"] == password:
+            self.current_user = username
+            self.auth_message.value = ""
+            self.stats_button.disabled = False
+            self.page.go("/stats")
+            self.update_stats()
+            self.update_header()
+        else:
+            self.auth_message.value = "Неверный логин или пароль!"
+            self.page.update()
+        self.page.go("/stats")
+
+    def logout_user(self, e):
+        self.current_user = None
+        self.stats_button.disabled = True
+        self.page.go("/")
+        self.update_header()
+        self.page.go("/")
+
+    def update_header(self):
+        if self.current_user:
+            self.header.controls[1].controls[1] = ft.Text(f"👤 {self.current_user}", size=18)
+        else:
+            self.header.controls[1].controls[1] = ft.IconButton(
+                icon=ft.icons.PERSON, 
+                on_click=self.show_profile
+            )
         self.page.update()
 
-    def close_dialog(self):
-        self.page.dialog.open = False
-        self.page.update()
+    def update_camera(self):
+        while self.is_camera_active:
+            ret, frame = self.camera.read()
+            if ret:
+                frame = cv2.flip(frame, 1)
+                _, buffer = cv2.imencode('.jpg', frame)
+                self.player_view.src_base64 = base64.b64encode(buffer).decode()
+                self.page.update()
+
+    def on_view_pop(self, view):
+        self.page.views.pop()
+        self.page.go(self.page.views[-1].route)
 
     def close(self):
         self.is_camera_active = False
         self.camera.release()
 
 if __name__ == "__main__":
-    ft.app(target=RockPaperScissorsUI, assets_dir="assets")
+    ft.app(target=RockPaperScissorsGame, assets_dir="assets")
