@@ -1,302 +1,248 @@
+import flet as ft
 import cv2
-from PIL import Image, ImageTk
-import tkinter as tk
-from tkinter import ttk
-import os
+import base64
 import random
+from collections import defaultdict
 from ai import brawl
+from time import sleep
+import threading
 
 class RockPaperScissorsGame:
-    def __init__(self, root):
-        self.root = root
-        self.root.title('Игра "Камень-Ножницы-Бумага"')
-        self.root.geometry('800x720')
-        self.root.resizable(False, False)
+    def __init__(self, page: ft.Page):
+        self.page = page
+        self.page.title = "Камень-Ножницы-Бумага"
+        self.page.window_width = 800
+        self.page.window_height = 720
+        self.page.window_resizable = False
+        self.page.theme_mode = ft.ThemeMode.DARK
         
-        # Настройка темы и цветов
-        self.bg_color = "#2C3E50"
-        self.highlight_color = "#3498DB"
-        self.text_color = "#ECF0F1"
-        self.btn_color = "#E74C3C"
-        self.timer_color = "#F39C12"
+        # Инициализация игры
+        self.camera = cv2.VideoCapture(0)
+        self.choices = ["Камень", "Ножницы", "Бумага"]
+        self.game_status = "ready"
+        self.countdown = 3
+        self.is_camera_active = True
         
-        self.root.configure(bg=self.bg_color)
-
-        # счетчики игр
+        # Статистика
         self.wins = 0
         self.losses = 0
         self.draws = 0
-        # Инициализация переменных
-        self.countdown = 3
-        self.camera = cv2.VideoCapture(0)
-        self.choices = ["Камень", "Ножницы", "Бумага"]
-        self.player_choice = None
-        self.ai_choice = None
-        self.game_status = "ready"  # ready, countdown, result
+        self.gesture_stats = defaultdict(int)
+        self.users = {}
+        self.current_user = None
         
-        self.resource_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+        # Элементы интерфейса
+        self.create_main_ui()
+        self.create_profile_ui()
         
-        # Загрузка изображений
-        self.load_images()
-        
-        # Создание элементов интерфейса
-        self.create_widgets()
-        
-        # Обновление кадра с камеры
-        self.frame_update()
-    
-    def load_images(self):
-        try:
-            # AI изображение
-            ai_path = os.path.join(self.resource_path, "ai.png")
-            self.ai_img = Image.open(ai_path)
-            self.ai_img = self.ai_img.resize((320, 240))
-            self.ai_photo = ImageTk.PhotoImage(self.ai_img)
-            
-            # Иконка помощи
-            help_path = os.path.join(self.resource_path, "help.png")
-            self.help_img = Image.open(help_path)
-            self.help_img = self.help_img.resize((50, 50))
-            self.help_photo = ImageTk.PhotoImage(self.help_img)
-            
-            # Иконка статистики
-            rate_path = os.path.join(self.resource_path, "rate.png")
-            self.rate_img = Image.open(rate_path)
-            self.rate_img = self.rate_img.resize((50, 50))
-            self.rate_photo = ImageTk.PhotoImage(self.rate_img)
-            
-            print("Изображения интерфейса загружены успешно")
-        except Exception as e:
-            print(f"Ошибка загрузки изображений интерфейса: {e}")
-            # Создаем заглушки для изображений
-            self.ai_photo = None
-            self.help_photo = None
-            self.rate_photo = None
-        
-        # Загружаем изображения для жестов
-        self.gesture_images = {}
-        gesture_filenames = {
-            "Камень": ["камень.png", "rock.png"],
-            "Ножницы": ["ножницы.png", "scissors.png"],
-            "Бумага": ["бумага.png", "paper.png"]
-        }
-        
-        for gesture, filenames in gesture_filenames.items():
-            loaded = False
-            for filename in filenames:
-                try:
-                    path = os.path.join(self.resource_path, filename)
-                    if os.path.exists(path):
-                        img = Image.open(path)
-                        img = img.resize((100, 100))
-                        self.gesture_images[gesture] = ImageTk.PhotoImage(img)
-                        print(f"Изображение {filename} загружено успешно")
-                        loaded = True
-                        break
-                except Exception as e:
-                    print(f"Не удалось загрузить {filename}: {e}")
-            
-            if not loaded:
-                print(f"Не удалось загрузить изображение для {gesture}, создаем заглушку")
-                self.gesture_images[gesture] = None
-    
-    def create_widgets(self):
-        # Создаем фрейм заголовка
-        header_frame = tk.Frame(self.root, bg=self.highlight_color, height=60)
-        header_frame.pack(fill=tk.X)
-        
-        title_label = tk.Label(header_frame, text='Игра "Камень-Ножницы-Бумага"', 
-                              font=("Arial", 20, "bold"), bg=self.highlight_color, fg=self.text_color)
-        title_label.pack(pady=10)
-        
-        # Основной фрейм для содержимого
-        main_frame = tk.Frame(self.root, bg=self.bg_color)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        # Фрейм для видео и AI
-        video_frame = tk.Frame(main_frame, bg=self.bg_color)
-        video_frame.pack(fill=tk.X)
-        
-        # Фрейм для видео с игроком
-        player_frame = tk.LabelFrame(video_frame, text="Игрок", font=("Arial", 12), 
-                                    bg=self.bg_color, fg=self.text_color, padx=10, pady=10)
-        player_frame.grid(row=0, column=0, padx=10)
-        
-        self.video_label = tk.Label(player_frame, width=320, height=240, bg="black")
-        self.video_label.pack()
-        
-        # Фрейм для ИИ
-        ai_frame = tk.LabelFrame(video_frame, text="Компьютер", font=("Arial", 12), 
-                               bg=self.bg_color, fg=self.text_color, padx=10, pady=10)
-        ai_frame.grid(row=0, column=1, padx=10)
-        
-        if self.ai_photo:
-            self.ai_label = tk.Label(ai_frame, width=320, height=240, image=self.ai_photo, bg="black")
-        else:
-            self.ai_label = tk.Label(ai_frame, width=320, height=240, text="AI", font=("Arial", 40), 
-                                   bg="black", fg="white")
-        self.ai_label.pack()
-        
-        # Фрейм для результатов
-        result_frame = tk.Frame(main_frame, bg=self.bg_color, pady=20)
-        result_frame.pack(fill=tk.X)
-        
-        # Выбор игрока
-        self.player_choice_frame = tk.LabelFrame(result_frame, text="Ваш выбор", font=("Arial", 12), 
-                                              bg=self.bg_color, fg=self.text_color, padx=50, pady=20)
-        self.player_choice_frame.grid(row=0, column=0, padx=20)
-        
-        self.player_choice_label = tk.Label(self.player_choice_frame, text="Ожидание...", 
-                                           font=("Arial", 14, "bold"), bg=self.bg_color, fg=self.text_color,
-                                           width=10, height=2)
-        self.player_choice_label.pack()
-        
-        self.player_img_label = tk.Label(self.player_choice_frame, bg=self.bg_color)
-        self.player_img_label.pack()
-        
-        # Результат
-        self.result_frame = tk.Frame(result_frame, bg=self.bg_color, padx=10, pady=10)
-        self.result_frame.grid(row=0, column=1, padx=20)
-        
-        self.result_label = tk.Label(self.result_frame, text="", font=("Arial", 16, "bold"), 
-                                    bg=self.bg_color, fg=self.text_color, width=10, height=2)
-        self.result_label.pack()
-        
-        # Выбор AI
-        self.ai_choice_frame = tk.LabelFrame(result_frame, text="Выбор компьютера", font=("Arial", 12), 
-                                          bg=self.bg_color, fg=self.text_color, padx=50, pady=20)
-        self.ai_choice_frame.grid(row=0, column=2, padx=20)
-        
-        self.ai_choice_label = tk.Label(self.ai_choice_frame, text="Ожидание...", 
-                                       font=("Arial", 14, "bold"), bg=self.bg_color, fg=self.text_color,
-                                       width=10, height=2)
-        self.ai_choice_label.pack()
-        
-        self.ai_img_label = tk.Label(self.ai_choice_frame, bg=self.bg_color)
-        self.ai_img_label.pack()
-        
-        # Фрейм для кнопок управления
-        control_frame = tk.Frame(main_frame, bg=self.bg_color, pady=20)
-        control_frame.pack(fill=tk.X)
-        
-        self.start_button = tk.Button(control_frame, text="НАЧАТЬ БОЙ", font=("Arial", 14, "bold"), 
-                                     bg=self.btn_color, fg=self.text_color, padx=20, pady=10,
-                                     command=self.start_game)
-        self.start_button.pack()
-        
-        self.timer_label = tk.Label(main_frame, text="", font=("Arial", 40, "bold"), 
-                                   bg=self.bg_color, fg=self.timer_color)
-        self.timer_label.pack(pady=10)
-    
-    def frame_update(self):
-        ret, frame = self.camera.read()
-        if ret:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = cv2.flip(frame, 1)  # Отражаем по горизонтали для естественности
-            
-            # Добавляем рамку если игра активна
-            if self.game_status == "countdown":
-                cv2.rectangle(frame, (20, 20), (frame.shape[1]-20, frame.shape[0]-20), 
-                             (0, 255, 0), 3)
-            
-            img = Image.fromarray(frame)
-            img = img.resize((320, 240))
+        # Запуск потока для камеры
+        self.camera_thread = threading.Thread(target=self.update_camera, daemon=True)
+        self.camera_thread.start()
 
+    def create_main_ui(self):
+        # Основные элементы
+        self.title = ft.Text("Камень-Ножницы-Бумага", size=30, weight=ft.FontWeight.BOLD)
+        
+        self.player_view = ft.Image(width=320, height=240, border_radius=10)
+        self.ai_view = ft.Image(src="assets/ai.png", width=320, height=240, border_radius=10)
+        
+        self.player_choice = ft.Text("Ожидание...", size=20)
+        self.ai_choice = ft.Text("Ожидание...", size=20)
+        self.result_text = ft.Text("", size=24, weight=ft.FontWeight.BOLD)
+        
+        self.start_btn = ft.ElevatedButton(
+            "НАЧАТЬ БОЙ", 
+            on_click=self.start_game,
+            bgcolor=ft.colors.RED,
+            color=ft.colors.WHITE,
+            width=200
+        )
+        
+        self.profile_btn = ft.IconButton(
+            icon=ft.icons.PERSON,
+            on_click=self.show_profile,
+            tooltip="Профиль"
+        )
+        
+        self.timer_text = ft.Text("", size=40)
+        
+        # Сборка основного интерфейса
+        self.main_page = ft.Column([
+            ft.Row([self.title, self.profile_btn], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Row([self.player_view, self.ai_view], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Row([
+                ft.Column([ft.Text("Ваш выбор:"), self.player_choice]),
+                ft.Column([self.result_text]),
+                ft.Column([ft.Text("Компьютер:"), self.ai_choice])
+            ], alignment=ft.MainAxisAlignment.SPACE_AROUND),
+            ft.Column([self.start_btn, self.timer_text], alignment=ft.MainAxisAlignment.CENTER)
+        ], spacing=20)
 
-            imgtk = ImageTk.PhotoImage(img)
-            self.video_label.imgtk = imgtk
-            self.video_label.configure(image=imgtk)
-        else:
-            print('Ошибка доступа к камере')
+    def create_profile_ui(self):
+        # Элементы профиля
+        self.username_field = ft.TextField(label="Логин", width=200)
+        self.password_field = ft.TextField(label="Пароль", password=True, width=200)
+        
+        self.register_btn = ft.ElevatedButton(
+            "Зарегистрироваться",
+            on_click=self.register_user,
+            width=200
+        )
+        
+        self.login_btn = ft.ElevatedButton(
+            "Войти",
+            on_click=self.login_user,
+            width=200
+        )
+        
+        self.stats_text = ft.Text("", size=16)
+        self.gesture_stats_text = ft.Text("", size=16)
+        
+        # Сборка страницы профиля
+        self.profile_page = ft.Column([
+            ft.Text("Профиль", size=24, weight=ft.FontWeight.BOLD),
+            ft.Row([
+                ft.Column([
+                    self.username_field,
+                    self.password_field,
+                    ft.Row([self.register_btn, self.login_btn])
+                ]),
+                ft.Column([
+                    self.stats_text,
+                    self.gesture_stats_text
+                ], spacing=20)
+            ], spacing=40)
+        ], visible=False)
+
+        self.page.add(self.main_page, self.profile_page)
+
+    def update_stats_display(self):
+        total = self.wins + self.losses + self.draws
+        win_rate = (self.wins / total * 100) if total > 0 else 0
+        
+        stats = (
+            f"Победы: {self.wins}\n"
+            f"Поражения: {self.losses}\n"
+            f"Ничьи: {self.draws}\n"
+            f"Всего игр: {total}\n"
+            f"Винрейт: {win_rate:.1f}%"
+        )
+        
+        most_common = max(self.gesture_stats, key=self.gesture_stats.get, default="Нет данных")
+        gesture_stats = f"Самый частый жест: {most_common}\n"
+        for gesture, count in self.gesture_stats.items():
+            gesture_stats += f"{gesture}: {count}\n"
+
+        self.stats_text.value = stats
+        self.gesture_stats_text.value = gesture_stats
+        self.page.update()
+
+    def register_user(self, e):
+        username = self.username_field.value
+        password = self.password_field.value
+        
+        if not username or not password:
+            return
             
-        self.root.after(10, self.frame_update)
-    
-    def start_game(self):
-        if self.game_status != "countdown":
+        if username in self.users:
+            self.page.snack_bar = ft.SnackBar(ft.Text("Пользователь уже существует!"))
+            self.page.snack_bar.open = True
+        else:
+            self.users[username] = password
+            self.current_user = username
+            self.page.snack_bar = ft.SnackBar(ft.Text("Регистрация успешна!"))
+            self.page.snack_bar.open = True
+            
+        self.page.update()
+
+    def login_user(self, e):
+        username = self.username_field.value
+        password = self.password_field.value
+        
+        if self.users.get(username) == password:
+            self.current_user = username
+            self.page.snack_bar = ft.SnackBar(ft.Text("Вход выполнен!"))
+            self.page.snack_bar.open = True
+        else:
+            self.page.snack_bar = ft.SnackBar(ft.Text("Неверные данные!"))
+            self.page.snack_bar.open = True
+            
+        self.page.update()
+
+    def show_profile(self, e):
+        self.profile_page.visible = not self.profile_page.visible
+        self.main_page.visible = not self.profile_page.visible
+        if self.profile_page.visible:
+            self.update_stats_display()
+        self.page.update()
+
+    def update_camera(self):
+        while self.is_camera_active:
+            ret, frame = self.camera.read()
+            if ret:
+                frame = cv2.flip(frame, 1)
+                if self.game_status == "countdown":
+                    cv2.rectangle(frame, (20, 20), (frame.shape[1]-20, frame.shape[0]-20), (0, 255, 0), 3)
+                
+                _, buffer = cv2.imencode('.jpg', frame)
+                self.player_view.src_base64 = base64.b64encode(buffer).decode("utf-8")
+                self.page.update()
+
+    def start_game(self, e):
+        if self.game_status == "ready":
             self.game_status = "countdown"
-            self.countdown = 3
-            self.start_button.config(state=tk.DISABLED)
-            self.player_choice_label.config(text="Ожидание...")
-            self.ai_choice_label.config(text="Ожидание...")
-            self.result_label.config(text="")
+            self.start_btn.disabled = True
+            self.page.update()
             
-            # Очистка изображений
-            if hasattr(self, 'player_gesture_img'):
-                self.player_img_label.config(image="")
-            if hasattr(self, 'ai_gesture_img'):
-                self.ai_img_label.config(image="")
+            for i in range(3, 0, -1):
+                self.timer_text.value = str(i)
+                self.page.update()
+                sleep(1)
+            
+            self.timer_text.value = "Готово!"
+            self.page.update()
+            
+            ret, frame = self.camera.read()
+            player_choice = brawl(frame)
+            ai_choice = random.choice(self.choices)
+            
+            # Обновление статистики
+            if player_choice in self.choices:
+                self.gesture_stats[player_choice] += 1
                 
-            self.update_countdown()
-    
-    def update_countdown(self):
-        if self.countdown > 0:
-            self.timer_label.config(text=str(self.countdown))
-            self.countdown -= 1
-            self.root.after(1000, self.update_countdown)
-        else:
-            self.timer_label.config(text="Готово!")
-            self.determine_result()
-            self.root.after(1000, self.reset_game)
-    
-    def determine_result(self):
-        ret, frame = self.camera.read()
-        self.player_choice = brawl(frame)
-        print(self.player_choice)
-        self.ai_choice = random.choice(self.choices)
-        
-        
-        
-        # Определяем результат
-        if type(self.player_choice) == str:
-            if self.player_choice == self.ai_choice:
-                result = "Ничья!"
-                color = "yellow"
-                self.draws += 1
-            elif ((self.player_choice == "Камень" and self.ai_choice == "Ножницы") or
-                (self.player_choice == "Ножницы" and self.ai_choice == "Бумага") or
-                (self.player_choice == "Бумага" and self.ai_choice == "Камень")):
-                result = "Победа!"
-                color = "green"
-                self.wins += 1
+                if player_choice == ai_choice:
+                    self.draws += 1
+                    result = "Ничья!"
+                    color = ft.colors.YELLOW
+                elif ((player_choice == "Камень" and ai_choice == "Ножницы") or
+                      (player_choice == "Ножницы" and ai_choice == "Бумага") or
+                      (player_choice == "Бумага" and ai_choice == "Камень")):
+                    self.wins += 1
+                    result = "Победа!"
+                    color = ft.colors.GREEN
+                else:
+                    self.losses += 1
+                    result = "Поражение!"
+                    color = ft.colors.RED
             else:
-                result = "Поражение!"
-                color = "red"
-                self.losses += 1
-            # Отображаем изображения жестов, если они доступны
-            if self.player_choice in self.gesture_images and self.gesture_images[self.player_choice]:
-                self.player_gesture_img = self.gesture_images[self.player_choice]
-                self.player_img_label.config(image=self.player_gesture_img)
-                
-            if self.ai_choice in self.gesture_images and self.gesture_images[self.ai_choice]:
-                self.ai_gesture_img = self.gesture_images[self.ai_choice]
-                self.ai_img_label.config(image=self.ai_gesture_img)
-            # Отображаем выбор игрока и компьютера, елси жест распознан
-            self.player_choice_label.config(text=self.player_choice)
-            self.ai_choice_label.config(text=self.ai_choice)
-        else:
-            result = 'Ошибка'
-            color = 'red'
-            self.result_label.config(text=result, fg=color)
-        
-        self.result_label.config(text=result, fg=color)
-        self.game_status = "result"
-    
-    def reset_game(self):
-        self.start_button.config(state=tk.NORMAL)
-        self.timer_label.config(text="")
-        
-    
+                result = "Ошибка!"
+                color = ft.colors.RED
+
+            self.player_choice.value = player_choice
+            self.ai_choice.value = ai_choice
+            self.result_text.value = result
+            self.result_text.color = color
+            
+            self.game_status = "ready"
+            self.start_btn.disabled = False
+            self.timer_text.value = ""
+            self.page.update()
+            self.update_stats_display()
+
     def close(self):
-        if self.camera.isOpened():
-            self.camera.release()
+        self.is_camera_active = False
+        self.camera.release()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = RockPaperScissorsGame(root)
-    
-    def on_close():
-        app.close()
-        root.destroy()
-    
-    root.protocol("WM_DELETE_WINDOW", on_close)
+    ft.app(target=RockPaperScissorsGame, assets_dir="assets")
     root.mainloop()
