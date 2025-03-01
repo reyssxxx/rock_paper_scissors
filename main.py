@@ -341,7 +341,7 @@ class RockPaperScissorsGame:
         self.result_label.config(text=result, fg=color)
         self.game_status = "result"
         
-        # Обновляем статистику
+        # Обновление статистики
         self.stats_table.delete(*self.stats_table.get_children())
         self.stats_table.insert("", tk.END, values=(self.wins, self.losses, self.draws))
     
