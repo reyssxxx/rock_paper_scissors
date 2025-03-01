@@ -21,7 +21,11 @@ class RockPaperScissorsGame:
         self.timer_color = "#F39C12"
         
         self.root.configure(bg=self.bg_color)
-        
+
+        # счетчики игр
+        self.wins = 0
+        self.losses = 0
+        self.draws = 0
         # Инициализация переменных
         self.countdown = 3
         self.camera = cv2.VideoCapture(0)
@@ -30,7 +34,6 @@ class RockPaperScissorsGame:
         self.ai_choice = None
         self.game_status = "ready"  # ready, countdown, result
         
-        # Определение пути для ресурсов - исправленная версия
         self.resource_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
         
         # Загрузка изображений
@@ -184,67 +187,6 @@ class RockPaperScissorsGame:
         self.timer_label = tk.Label(main_frame, text="", font=("Arial", 40, "bold"), 
                                    bg=self.bg_color, fg=self.timer_color)
         self.timer_label.pack(pady=10)
-        
-        # Панель информации
-        info_frame = tk.Frame(main_frame, bg=self.bg_color, pady=20)
-        info_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        
-        if self.help_photo:
-            self.help_button = tk.Button(info_frame, image=self.help_photo, bg=self.highlight_color,
-                                       command=self.show_help)
-        else:
-            self.help_button = tk.Button(info_frame, text="?", font=("Arial", 16, "bold"),
-                                       bg=self.highlight_color, fg=self.text_color, width=3, height=1,
-                                       command=self.show_help)
-        self.help_button.grid(row=0, column=0, padx=5)
-        
-        if self.rate_photo:
-            self.stats_button = tk.Button(info_frame, image=self.rate_photo, bg=self.highlight_color,
-                                        command=self.show_stats)
-        else:
-            self.stats_button = tk.Button(info_frame, text="📊", font=("Arial", 16), 
-                                        bg=self.highlight_color, fg=self.text_color, width=3, height=1,
-                                        command=self.show_stats)
-        self.stats_button.grid(row=0, column=1, padx=5)
-        
-        # Скрытые элементы для справки и статистики
-        self.help_text = tk.Text(main_frame, wrap=tk.WORD, width=60, height=10, bg=self.bg_color, 
-                               fg=self.text_color, font=("Arial", 12))
-        self.help_text.insert(tk.END, """
-        Как играть:
-        1. Нажмите "НАЧАТЬ БОЙ"
-        2. Покажите жест (камень, ножницы или бумагу) перед камерой во время отсчета
-        3. Подождите результат
-        
-        Правила:
-        • Камень бьет ножницы
-        • Ножницы режут бумагу
-        • Бумага покрывает камень
-        """)
-        self.help_text.config(state=tk.DISABLED)
-        
-        # Фрейм статистики
-        self.stats_frame = tk.Frame(main_frame, bg=self.bg_color)
-        
-        self.stats_table = ttk.Treeview(self.stats_frame, columns=("wins", "losses", "draws"), 
-                                       show="headings", height=5)
-        self.stats_table.heading("wins", text="Победы")
-        self.stats_table.heading("losses", text="Поражения")
-        self.stats_table.heading("draws", text="Ничьи")
-        
-        self.stats_table.column("wins", width=100)
-        self.stats_table.column("losses", width=100)
-        self.stats_table.column("draws", width=100)
-        
-        # Добавим тестовые данные
-        self.stats_table.insert("", tk.END, values=("0", "0", "0"))
-        
-        self.stats_table.pack(fill=tk.BOTH, expand=True)
-        
-        # Счетчики игр
-        self.wins = 0
-        self.losses = 0
-        self.draws = 0
     
     def frame_update(self):
         ret, frame = self.camera.read()
@@ -297,8 +239,6 @@ class RockPaperScissorsGame:
             self.root.after(1000, self.reset_game)
     
     def determine_result(self):
-        # В реальном приложении здесь будет обработка распознанного жеста
-        # Сейчас просто выбираем случайный жест для демонстрации
         ret, frame = self.camera.read()
         self.player_choice = brawl(frame)
         print(self.player_choice)
@@ -340,28 +280,11 @@ class RockPaperScissorsGame:
         
         self.result_label.config(text=result, fg=color)
         self.game_status = "result"
-        
-        # Обновление статистики
-        self.stats_table.delete(*self.stats_table.get_children())
-        self.stats_table.insert("", tk.END, values=(self.wins, self.losses, self.draws))
     
     def reset_game(self):
         self.start_button.config(state=tk.NORMAL)
         self.timer_label.config(text="")
         
-    def show_help(self):
-        if self.help_text.winfo_ismapped():
-            self.help_text.pack_forget()
-        else:
-            self.stats_frame.pack_forget()
-            self.help_text.pack(pady=20, side=tk.BOTTOM)
-    
-    def show_stats(self):
-        if self.stats_frame.winfo_ismapped():
-            self.stats_frame.pack_forget()
-        else:
-            self.help_text.pack_forget()
-            self.stats_frame.pack(pady=20, side=tk.BOTTOM)
     
     def close(self):
         if self.camera.isOpened():
