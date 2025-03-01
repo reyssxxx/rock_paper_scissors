@@ -1,10 +1,5 @@
 import mediapipe
 import cv2
-from collections import Counter
-import random
-from time import sleep
-import time
-
 
 #Используем MediaPipe для считывания позиции рук в реальном времени
 drawingModule = mediapipe.solutions.drawing_utils
@@ -18,11 +13,6 @@ tip=[8,12,16,20]
 mid=[6,10,14,18] 
 fingers=[]
 finger=[]
-
-
-               
-
-counter=0
 
 def brawl(frame1):     
         with handsModule.Hands(static_image_mode=False, min_detection_confidence=0.7, min_tracking_confidence=0.7, max_num_hands=1) as hands:
