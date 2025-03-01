@@ -6,6 +6,10 @@ from collections import defaultdict
 from ai import brawl
 from time import sleep
 import threading
+import os
+
+PATH = os.getcwd() 
+PATH.replace('\\', '/') 
 
 class RockPaperScissorsUI:
     def __init__(self, page: ft.Page):
@@ -47,7 +51,7 @@ class RockPaperScissorsUI:
 
         # Основные элементы
         self.player_cam = ft.Image(width=400, height=300, border_radius=10)
-        self.ai_image = ft.Image(src="assets/ai.png", width=400, height=300, border_radius=10)
+        self.ai_image = ft.Image(src=f"{PATH}/src/ai.png", width=400, height=300, border_radius=10)
         
         self.player_choice_display = ft.Text("Ожидание...", size=18)
         self.ai_choice_display = ft.Text("Ожидание...", size=18)
