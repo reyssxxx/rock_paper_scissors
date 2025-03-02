@@ -24,7 +24,7 @@
     
 Клонируйте репозиторий:
 
-    git clone https://github.com/ваш-username/ваш-репозиторий.git
+    git clone https://github.com/reyssxxx/rock_paper_scissors.git
 
 Установите зависимости:
 
