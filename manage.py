@@ -14,7 +14,7 @@ def registration(username: str, password: str):
     result = cur.fetchone()
     print(result)
     if not result:
-        cur.execute(f'INSERT INTO users (username, password) VALUES ("{username}", "{password_hash}")')
+        cur.execute(f'INSERT INTO users (username, password, wins, loses, draws, rocks, scissors, paper) VALUES ("{username}", "{password_hash}", 0, 0, 0, 0, 0, 0)')
         db.commit()
         db.close()
         return True
@@ -34,7 +34,7 @@ def login(username: str, password: str):
     result = cur.fetchone()
     print(result)
     if result:
-        print('HITLER')
+        
         cur.execute(f'SELECT password FROM users WHERE password="{password_hash}"')
         result = cur.fetchone()
         if result:
@@ -54,12 +54,7 @@ def get_stat(username):
     
     cur.execute(f'SELECT wins, loses, draws, rocks, scissors, paper FROM users WHERE username="{username}"')
     result = cur.fetchone()
-    
-    if result:
-        result = {'wins': result[0], 'loses': result[1], 'draws': result[2], 'rocks':result[3], 'scissors':result[4], 'paper':result[5]}
-    else:
-        result = {'wins': 0, 'loses': 0, 'draws': 0, 'rocks':0, 'scissors':0, 'paper':0}
-
+    result = {'wins': result[0], 'loses': result[1], 'draws': result[2], 'rocks':result[3], 'scissors':result[4], 'paper':result[5]}
     db.commit()
     db.close()
     return result
@@ -75,6 +70,4 @@ def reg_game(win: str, choice: str, username: str):
         choice = 'paper'
     cur.execute(f'UPDATE users SET {win}={win}+1, {choice}={choice}+1 WHERE username="{username}"')
     db.commit()
-    db.close()
-    
-
+    db.close()    
