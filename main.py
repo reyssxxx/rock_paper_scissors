@@ -79,8 +79,8 @@ class RockPaperScissorsGame:
         
 
         # Отображение выбора
-        self.player_choice = ft.Image(width=150, height=150, border_radius=10, src=f'{PATH}/assets/пусто.png')
-        self.ai_choice = ft.Image(width=150, height=150, border_radius=10, src=f'{PATH}/assets/пусто.png')
+        self.player_choice = ft.Image(width=150, height=150, border_radius=10, src=f'{PATH}/assets/пусто.gif')
+        self.ai_choice = ft.Image(width=150, height=150, border_radius=10, src=f'{PATH}/assets/пусто.gif')
 
         # Центральная панель
         self.timer_text = ft.Text("", size=72)
@@ -208,7 +208,7 @@ class RockPaperScissorsGame:
         self.frequent_choice = ft.Text("Частый выбор: ")
         
                 
-        self.choice_image = ft.Image(width=100, height=100, border_radius=10, src=f'{PATH}/assets/пусто.png')
+        self.choice_image = ft.Image(width=100, height=100, border_radius=10, src=f'{PATH}/assets/пусто.gif')
         self.session_stats = ft.Text("Игр в этой сессии: 0")
         self.logout_btn = ft.ElevatedButton("Выйти из аккаунта", on_click=self.logout_user)
         
@@ -262,11 +262,11 @@ class RockPaperScissorsGame:
             stats = profile.get_stat(NAME)
             total = stats['wins'] + stats['loses'] + stats['draws']
             win_rate = (stats['wins'] / total * 100) if total > 0 else 0
-            
-            
+
+
             stats = profile.get_stat(NAME)
             choice = list(stats.values())
-            choice = max(choice[2:])
+            choice = max(choice[3:])
             for key, val in stats.items():
                 if val == choice:
                     if key=='rocks':
@@ -275,11 +275,12 @@ class RockPaperScissorsGame:
                         choice='ножницы'
                     if key=='paper':
                         choice='бумага'
-            
+
+
             self.choice_image.src = f"{PATH}/assets/{choice}.png"
             self.frequent_choice.value = f"Частый выбор: {choice.title()}"
-            
-            
+
+
             self.total_games.value = f"Всего игр: {total}"
             self.stats_wins.value = f"Побед: {stats['wins']}"
             self.stats_losses.value = f"Поражений: {stats['loses']}"
@@ -307,7 +308,8 @@ class RockPaperScissorsGame:
         if player_choice in self.choices:
             self.player_choices.append(player_choice)
         
-        self.player_choice.src = f"{PATH}/assets/{player_choice.lower()}.png" if player_choice in self.choices else ""
+        self.player_choice.src = f"{PATH}/assets/{player_choice.lower()}.png" if player_choice in self.choices else f"{PATH}/assets/ошибка.png"
+
         self.ai_choice.src = f"{PATH}/assets/{ai_choice.lower()}.png"
         
         result = "Ошибка"
@@ -330,7 +332,6 @@ class RockPaperScissorsGame:
         self.game_history.append(result)
         self.update_history()
         self.update_stats()
-        
         self.result_text.value = result
         self.result_text.color = ft.colors.GREEN if result == "Победа" else \
                                 ft.colors.RED if result == "Поражение" else \
